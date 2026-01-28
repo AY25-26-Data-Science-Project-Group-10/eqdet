@@ -35,7 +35,7 @@ These are discussion points not covered in the slides sent by Matt.t
     - ISUH to share slides presented in the meeting
     - ISUH to provide earthquake catalog in quakeML format
     - ISUH to provide STA/LTA threshold values they use
-    - (if needed) ISUH to reach out to EQCCT authors to obtain EQCCT training API 
+    - (If needed) ISUH to reach out to EQCCT authors to obtain EQCCT training API 
 
 ### Upcoming:
 - Team project meeting: **Monday 02.02.2026 at 10:00, venue TBD**
