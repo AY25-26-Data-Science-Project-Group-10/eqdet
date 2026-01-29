@@ -16,7 +16,9 @@ These are discussion points not covered in the slides sent by Matt.t
       - ISUH has yet to experiment between pretrained EQCCT model and an EQCCT model trained purely on Finnish data. We can evaluate the performance of both.
 
     - Model requirements
-      - Phase picking is the primary task, others (i.e classification of root cause, locating earthquakes) are not necessary 
+      - Phase picking is the primary task, others (i.e classification of root cause, locating earthquakes) are not necessary
+      - Program must operate in less than seconds (real-time)
+      - The model shouldn't confuse global earthquakes with local ones
 
 2. Characteristics of waveforms:
     - Typical 0.5s transmission latency from seismic station to laptop
@@ -30,6 +32,7 @@ These are discussion points not covered in the slides sent by Matt.t
     - \>4-5 stations needed to accurately determine location of earthquake. Calculations are done using a solver thats already robust
     - Frequency of waves vary between earthquakes. ISUH usually bandpasses between 2 and 8 Hz
     - P and S waves could have 15-20s separation
+    - Strong background noise between 3-7 secs (we can correlate that noise and treat it as a source)
 
 3. ISUH to follow up with:
     - ISUH to share slides presented in the meeting
