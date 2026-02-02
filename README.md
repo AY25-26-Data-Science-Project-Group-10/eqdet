@@ -81,3 +81,29 @@ git stash pop
 
 ### 4. Resolve bugs and continue your work
 Since your code is mixed in with new code, there might be bugs. Resolve them and continue with your work :)
+
+## Setup the Python environment (notebooks + scripts)
+
+Run these commands from the repository root (works on Linux/macOS).
+
+### 1. Create a virtual environment
+```bash
+python3 -m venv .venv
+```
+
+### 2. Activate the virtual environment
+```bash
+source .venv/bin/activate
+```
+
+### 3. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Register the environment as a Jupyter kernel (for notebooks)
+```bash
+python -m ipykernel install --user --name "eq-venv" --display-name "Python (eqdet)"
+```
+
+### 5. Select the kernel in your notebook UI
