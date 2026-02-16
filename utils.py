@@ -5,7 +5,29 @@ import pandas as pd
 import subprocess
 import numpy as np
 
-PICK_COLUMNS = ["Event id", "SEED string", "Pick type", "Event type", "Pick time"]
+# ------------ DIRECTORY NAMES ------------
+DATA_DIR = "data"
+WAVEFORM_DIR = "data/waveforms_earthquakes_nonoise"
+PRED_DIR = "predictions"
+
+
+# ------------ CSV FILE CONFIGS ------------
+# Pick file - Each row is a pick for an earthquake, explosion, or probable explosion 
+COLUMNS_PICKS = ["Event id", "SEED string", "Pick type", "Event type", "Pick time"]
+FILENAME_PICKS = "picks.csv"
+
+# Windows file - Each row is an earthquake pick with columns window start and window end time 
+FILENAME_WINDOWS = "windows.csv"
+
+# Labels file - Each row has the P and S arrival time for a waveform
+# The columns names are copied from EQCCTOne's prediction output csv file
+COLUMNS_Y = ["file_name", "network", "station", "instrument_type", "station_lat", "station_lon", "station_elv","p_arrival_time", "p_probability", "s_arrival_time", "s_probability"]
+FILENAME_Y = "labels.csv"
+
+
+# ------------ DATA SOURCE CONFIGS  ------------
+ISUH_IP_ADDR = "http://128.214.169.201:8080"
+
 
 
 def extract_picks(catalogs):
@@ -23,7 +45,7 @@ def extract_picks(catalogs):
     """
     
     # Dataframe of all earthquake, explosion and probable_explosion picks
-    df_picks = pd.DataFrame(columns=PICK_COLUMNS)
+    df_picks = pd.DataFrame(columns=COLUMNS_PICKS)
     
     for catalog_name, catalog in catalogs.items():
         for event in catalog:
@@ -36,7 +58,93 @@ def extract_picks(catalogs):
 
                     event_type = catalog_name                                   # Earthquakes, explosions, or probable_explosions
                     pick_time = pick.time                                       # Time of S or P pick, in UTC datetime format
-                    row_df = pd.DataFrame([[event_id, seed_string, pick_type, event_type, pick_time]], columns=PICK_COLUMNS)
+                    row_df = pd.DataFrame([[event_id, seed_string, pick_type, event_type, pick_time]], columns=COLUMNS_PICKS)
                     df_picks = pd.concat([df_picks, row_df], ignore_index=True)
                     
     return df_picks
+
+
+
+def plot_traces(
+		st, 
+		ptime=None, stime=None, 
+		title="S/P picks", 
+		figname=None, showf=True, figsize=(10, 10), **kwargs
+	):
+    """Plot all traces in a stream, with P and S arrival times, side-by-side from top to bottom
+
+        Parameters
+        ----------
+        st : obspy.Stream
+            Stream object containing one or more seismic traces to plot.
+
+        ptime : datetime-like or float, optional
+            P-wave pick time. If provided, a vertical marker will be drawn at
+            this time on all traces.
+
+        stime : datetime-like or float, optional
+            S-wave pick time. If provided, a vertical marker will be drawn at
+            this time on all traces.
+
+        title : str, default "S/P picks"
+            Title of the figure.
+
+        figname : str, optional
+            Output filename for saving the figure. If None, the figure is not saved.
+
+        showf : bool, default True
+            Whether to display the figure using matplotlib.
+
+        figsize : tuple of float, default (10, 10)
+            Size of the matplotlib figure in inches as (width, height).
+
+        **kwargs
+            Additional keyword arguments passed to the underlying plotting
+            routines (e.g., colors, linewidths, etc.).
+    """
+	
+    ntr=len(st)
+    ptimes = [ptime]*len(st)
+    stimes = [stime]*len(st)
+
+    fig = plt.figure(figsize=figsize)
+
+    for ii in range(ntr):
+        ax = plt.subplot(ntr,1,ii+1)
+        nt=len(st[ii].data)
+        twin=(nt-1)*1.0/st[ii].stats.sampling_rate
+        staname=st[ii].stats.network+'.'+st[ii].stats.station
+        t=np.linspace(0,twin,nt)
+        plt.plot(t,st[ii].data,color='k',label = st[ii].id, linewidth = 1, markersize=1)
+        
+        if ii==0:
+            plt.title(title,fontsize='large', fontweight='normal')
+        
+        if ii==ntr-1:
+            plt.setp(ax.get_xticklabels(), visible=True)
+            ax.set_xlabel("Time (s)",fontsize='large', fontweight='normal')
+        else:
+            plt.setp(ax.get_xticklabels(), visible=False)
+            
+        ax.set_xlim(xmin=0)
+        ax.set_xlim(xmax=t[-1])
+        ymin, ymax = ax.get_ylim()
+        
+        if ptime is not None:
+            tp=ptimes[ii]-st[ii].stats.starttime
+            plt.vlines(tp, ymin, ymax, color = 'r', linewidth = 1, label="P pick") #for P
+            
+        if stime is not None:
+            ts=stimes[ii]-st[ii].stats.starttime
+            plt.vlines(ts, ymin, ymax, color = 'g', linewidth = 1, label="S pick") #for P
+        
+        plt.gca().legend(loc='lower right', fontsize = 15/(ntr/4))
+        
+    if figname is not None:
+        plt.savefig(figname,**kwargs)
+
+    if showf:
+        plt.show()
+    else:
+        plt.close()
+	
