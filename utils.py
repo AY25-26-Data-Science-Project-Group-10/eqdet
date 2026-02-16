@@ -1,4 +1,4 @@
-import obspy, io
+import obspy, os, re
 from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -9,7 +9,7 @@ import numpy as np
 DATA_DIR = "data"
 WAVEFORM_DIR = "data/waveforms_earthquakes_nonoise"
 PRED_DIR = "predictions"
-
+VIS_DIR = "visualizations"
 
 # ------------ CSV FILE CONFIGS ------------
 # Pick file - Each row is a pick for an earthquake, explosion, or probable explosion 
@@ -147,4 +147,88 @@ def plot_traces(
         plt.show()
     else:
         plt.close()
-	
+
+
+def load_stream(
+    win_start: obspy.UTCDateTime,
+    win_end: obspy.UTCDateTime,
+    network_code: str,
+    station_code: str):
+    """
+        Extract a waveform stream from the local dataset for an exact time window.
+
+        The requested time window **must exactly match** the start and end time of
+        the stored waveform file, with precision up to whole seconds in UTC.
+        Partial overlaps or sub-window requests are not supported.
+        
+        Parameters
+        ----------
+        win_start : obspy.UTCDateTime
+            Start time of the waveform window (UTC). Must match the dataset's waveform start time exactly to second precision.
+            
+        win_end : obspy.UTCDateTime
+            End time of the waveform window (UTC). Must match the dataset's waveform end time exactly to second precision.
+
+        network_code : str
+            Network code, according to SEED string format. 
+            
+        station_code : str
+            Station code, according to SEED string format. 
+            
+        Returns
+        -------
+        st : obspy.Stream or None
+            The extracted waveform stream if available. Returns ``None`` if no matching waveform exists in the dataset.
+    """
+    
+    dir_name = Path(WAVEFORM_DIR) / f'{win_start}_{win_end}' / station_code
+    st = None
+    
+    if os.path.isdir(dir_name):
+        st = obspy.Stream()
+        for filename in os.listdir(dir_name):
+            st += obspy.read(dir_name / filename)
+
+    else:
+        print(f"No waveform data for {network_code}.{station_code}.. {win_start}")
+        
+    return st
+
+
+def parse_label_filename(file_name:str):
+    """Parse the `file_name` field of dataset labels.
+
+    The expected filename format is:
+        "{SEED_STRING} | {WIN_START} - {WIN_END}"
+
+    Parameters
+    ----------
+    file_name : str
+        Label filename string containing SEED identifier and time window.
+
+    Returns
+    -------
+    network_code : str
+        Network identifier extracted from the SEED string. (e.g HE, FN)
+    station_code : str
+        Station identifier extracted from the SEED string. (e.g. OUL, KLF)
+    win_start : str
+        Window start time formatted as "%Y%m%dT%H%M%SZ".
+    win_end : str
+        Window end time formatted as "%Y%m%dT%H%M%SZ".
+    """
+    
+    match = re.split(r" [|-] ", file_name)
+    seed_string = match[0]
+    win_start = obspy.UTCDateTime(match[1]).strftime("%Y%m%dT%H%M%SZ")
+    win_end = obspy.UTCDateTime(match[2]).strftime("%Y%m%dT%H%M%SZ")
+
+    network_code, station_code, *_ = seed_string.split(".")
+    
+    return network_code, station_code, win_start, win_end
+
+
+def to_utc_or_none(utc_str):
+    """Convert to UTC datetime format if valid.
+    """
+    return obspy.UTCDateTime(utc_str) if not pd.isnull(utc_str) else None
