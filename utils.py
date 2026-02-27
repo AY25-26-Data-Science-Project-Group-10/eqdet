@@ -31,8 +31,8 @@ FILENAME_WINDOWS = "windows.csv"
 COLUMNS_Y = ["file_name", "network", "station", "instrument_type", "station_lat", "station_lon", "station_elv","p_arrival_time", "p_probability", "s_arrival_time", "s_probability"]
 FILENAME_Y_EQ = "eq_labels.csv" # Earthquake labels
 FILENAME_Y_EX = "ex_labels.csv" # Explosions labels
-FILENAME_Y_EQ_NOISE = "labels_eq_noise.csv" # Noise labels for earthquakes
-FILENAME_Y_NOISE = "labels_noise.csv" # Noise labels for earthquakes and explosions
+FILENAME_Y_EQ_NOISE = "eq_noise_labels.csv" # Noise labels for earthquakes
+FILENAME_Y_NOISE = "noise_labels.csv" # Noise labels for earthquakes and explosions
 
 # ------------ DATA SOURCE CONFIGS  ------------
 ISUH_IP_ADDR = "http://128.214.169.201:8080"
