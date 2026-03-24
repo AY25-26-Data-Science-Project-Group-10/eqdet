@@ -42,7 +42,7 @@ ISUH_IP_ADDR = "http://128.214.169.201:8080"
 WIN_SIZE = 60               # Window size in seconds. Same window size used in EQCCT paper
 PRE_EVENT_BUFFER = 5        # Number of seconds from start of window until first pick
 POST_EVENT_BUFFER = 5       # Number of seconds from last pick until end of window
-
+LIST_EVENT_TYPES = ["explosions", "earthquakes"] # List of event types to use when generating windows
 
 def extract_picks(catalogs):
     """Extract picks from catalogs of all event types (earthquakes, explosions, probable_explosions) into a dataframe. Ignores non P and S picks.
