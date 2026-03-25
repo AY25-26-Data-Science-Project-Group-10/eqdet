@@ -78,151 +78,97 @@ def extract_picks(catalogs):
     return df_picks
 
 
-def to_windows(df_picks, event_type="earthquakes", to_csv=False):
+def print_pick_summary(df_picks):
     """
-    Convert a DataFrame of picks into fixed-length time windows for event–stations.
-
-    This function groups seismic phase picks (e.g., P and S arrivals) by
-    event and station, determines the earliest and latest pick times,
-    and generates query windows suitable for downstream processing
-    (e.g., waveform extraction or EQCCT workflows).
-
-    Each window:
-        - Starts PRE_EVENT_BUFFER seconds before the earliest pick.
-        - Has a fixed duration of WIN_SIZE seconds.
-        - The last pick in the window is POST_EVENT_BUFFER seconds before the end of the window.
-
-    If the time difference between the P and S picks exceeds
-    the available window length (after accounting for POST_EVENT_BUFFER),
-    the picks are treated as *far pairs*. These picks are instead placed
-    into separate individual windows centered around each pick.
-
-    Additionally, summary statistics about pick counts and far pairs
-    are printed to stdout.
+    Reports the number of P and S picks per event-station.
 
     Parameters
     ----------
     df_picks : pandas.DataFrame
-        DataFrame containing seismic picks. The following columns are required:
-
-        - "Event id" : identifier for the seismic event (e.g. "smi:fi.isuh/event/1490639").
-        - "Event type" : event classification (e.g., "earthquakes", "explosions", "probable_explosions").
-        - "SEED string" : full SEED identifier including channel (e.g. "FN.SGF..BHZ"). 
-        - "Pick type" : phase type (e.g., "P", "S"). P and S picks with suffixes are accepted
-        - "Pick time" : pick timestamp (numeric or datetime-compatible).
-
-    event_type : str, optional
-        Event type used to filter picks before window construction.
-        Default is "earthquakes".
-
-    to_csv : bool, optional
-        If True, saves the resulting window DataFrame to FILENAME_WINDOWS.
-        Default is False.
+        DataFrame containing phase picks, station, and their event id.
 
     Returns
     -------
-    tuple[pandas.DataFrame, pandas.DataFrame]
-        df_windows_eq :
-            DataFrame containing all generated windows and associated picks.
-            Includes additional columns:
-
-            - "SEED string short" : SEED string without channel code (e.g. "FN.SGF.").
-            - "Event start" : earliest pick time per event–station.
-            - "Event end" : latest pick time per event–station.
-            - "Win start" : start time of the window.
-            - "Win end" : end time of the window.
-
-        df_far_pairs :
-            Subset of picks whose P–S separation exceeds the window capacity.
-            Contains an additional column:
-
-            - "P-S time diff (s)" : time difference between earliest and latest
-              picks for inspection.
-            This DataFrame is purely used for inspection.
-
-    Notes
-    -----
-    - Windows are grouped by ("Event id", "SEED string short"), where the
-      shortened SEED string removes the channel identifier so that
-      stations are grouped consistently.
-    - Far picks are assigned unique window identifiers by appending the
-      pick type to the event id.
-    - The function depends on the following global constants:
-
-        PRE_EVENT_BUFFER :
-            Time subtracted from the first pick to determine window start.
-
-        POST_EVENT_BUFFER :
-            Buffer required after the last pick to fit within the window.
-
-        WIN_SIZE :
-            Fixed duration of each window.
-
-        FILENAME_WINDOWS :
-            Output CSV filename when ``to_csv=True``.
+    pandas.DataFrame
+        A summary table with two columns:
+        - "(num P picks, num S picks)": tuple of P and S pick counts
+        - "Number of event-station": number of event-stations exhibiting that P/S pick combination
     """
 
-
-    # Select earthquake picks to create earthquake windows
-    df_windows = df_picks[df_picks["Event type"] == event_type]
-
-    # Remove channel ID from the SEED string, so that the shortened SEED string can identify stations
-    df_windows["SEED string short"] = df_windows["SEED string"].str.rsplit(".", n=1).str[0] 
-
-    # Convert pick time to obspy UTCDateTime format 
-    df_windows["Pick time"] = df_windows["Pick time"].apply(obspy.UTCDateTime)
-
-    # Report how many P and S picks are made at each window
     num_PS_picks = []
-    for (_, _), df_group in df_windows.groupby(["Event id", "SEED string short"]):
+    for (_, _), df_group in df_picks.groupby(["Event id", "SEED string short"]):
         num_P_picks = int(df_group["Pick type"].str.startswith("P").sum())
         num_S_picks = int(df_group["Pick type"].str.startswith("S").sum())
         num_PS_picks.append((num_P_picks, num_S_picks))
-    pick_summary = pd.Series(num_PS_picks).value_counts().to_frame("Number of windows (event-stations)").reset_index()
-    pick_summary = pick_summary.rename(columns={"index": "(num P picks, num S picks)"})
-    print(pick_summary)
-    print("")
+    df_summary = pd.Series(num_PS_picks).value_counts().to_frame("Number of event-stations").reset_index()
+    df_summary = df_summary.rename(columns={"index": "(num P picks, num S picks)"})
+    print("----------- PICK SUMMARY -----------" )
+    print(df_summary)
+    print(f"Total number of event-stations: {df_summary['Number of event-stations'].sum()}", end="\n\n")
 
 
-    # Time of the earliest pick (usually P) for an event-station
-    df_windows["Event start"] = df_windows.groupby(["Event id", df_windows["SEED string short"]])["Pick time"].transform("min")
+def print_far_pair_summary(df_windows):
+    """
+    Print a summary of event–station windows where the S arrival falls outside
+    the configured post‑event buffer (i.e., “far pairs”).
 
-    # Time of the latest pick (usually S) for an event-station
-    df_windows["Event end"] = df_windows.groupby(["Event id", df_windows["SEED string short"]])["Pick time"].transform("max")
+    A far pair is defined as a window where:
+        Win end - POST_EVENT_BUFFER < Event end
 
-    # Ensure that query window starts 5s before the first pick (usually P)
-    df_windows["Win start"] = df_windows["Event start"] - PRE_EVENT_BUFFER
+    In these cases, the window is too short to contain both the P and S picks
+    for that event–station pair. The function identifies such windows, computes
+    the P–S time difference for inspection, and prints a summary including:
 
-    # Ensure that query window is WIN_SIZE seconds long
-    df_windows["Win end"] = df_windows["Win start"] + WIN_SIZE
+    - The maximum P–S duration across all events
+    - The number of event–station windows classified as far pairs
+    - The number of individual picks belonging to far pairs
 
+    Parameters
+    ----------
+    df_windows : pandas.DataFrame
+        DataFrame containing event–station windows and pick metadata.
+        Must include the following columns:
+        - "Event id": unique identifier for the seismic event
+        - "SEED string short": station identifier (channel removed)
+        - "Event start": timestamp of the P arrival
+        - "Event end": timestamp of the S arrival
+        - "Win end": end time of the analysis window
+    """
 
-    # Mask for P-S pairs that are too far (far pairs) to be contained by the window; Window too short to contain P, S, 5s buffer after S wave, and 5s buffer before P wave
     mask_far_pairs = df_windows["Win end"] - POST_EVENT_BUFFER < df_windows["Event end"]
 
-
-    # Report the number of far pairs
-    df_far_pairs = df_windows[mask_far_pairs]
+    df_far_pairs = df_windows[mask_far_pairs].copy()
     df_far_pairs["P-S time diff (s)"] = df_far_pairs["Event end"] - df_far_pairs["Event start"] # Extract time difference between P and S picks for inspection
 
     max_diff = max(df_windows["Event end"] - df_windows["Event start"])               # Max time diff between P-S pair
     num_far_pairs = len(df_far_pairs.value_counts(["Event id", "SEED string short"]))   # Number of far pairs
 
-    print(f"Max duration between P and S arrivals: {max_diff}s\n")
-    print(f"The window size is too short to contain P, S picks, and buffers for these events ({num_far_pairs} far pairs, {len(df_far_pairs)} far picks):")
+    print("----------- FAR PAIR SUMMARY -----------" )
+    print(f"Max duration between P and S arrivals: {max_diff}s")
+    print(f"The window size of {WIN_SIZE}s is too short to contain some P, S pairs:")
+    print(f"  * Number of event-stations with far pairs: {num_far_pairs}")
+    print(f"  * Number of picks affected: {len(df_far_pairs)}", end="\n\n")
 
 
-    # Proceed to put each far picks into their own separate windows
-    df_windows.loc[mask_far_pairs, "Win start"] = df_windows.loc[mask_far_pairs, "Pick time"] - PRE_EVENT_BUFFER
-    df_windows.loc[mask_far_pairs, "Win end"] = df_windows.loc[mask_far_pairs, "Win start"] + WIN_SIZE
-    df_windows.loc[mask_far_pairs, "Event id"] = df_windows.loc[mask_far_pairs, "Event id"] + df_windows.loc[mask_far_pairs, "Pick type"] # Each window will be identified by event-station fields later, but we need to distinguish between windows of far picks since they have their own separate windows, so we add suffix for differentiation
+def print_overlap_summary(df_windows):
+    """
+    Print a summary of event–station windows that contain picks
+    belonging to other events.
 
-    if to_csv:
-        # Save windows to CSV to run on eqcct in another virtual environment lol
-        df_windows.to_csv(FILENAME_WINDOWS, index=False)  
-    
-    return df_windows, df_far_pairs
+    Parameters
+    ----------
+    df_windows : pandas.DataFrame
+        Must contain:
+        - "Has overlap": boolean indicating whether the window contains
+          picks from other events
+        - "Event id": event identifier
+        - "SEED string short": station identifier
+    """
 
+    df_overlaps = df_windows[df_windows["Has overlap"]]
+    num_windows = len(df_overlaps.value_counts(["Event id", "SEED string short"]))
+    print("----------- OVERLAP SUMMARY -----------" )
+    print(f"Number of windows containing picks from other events: {num_windows},", end="\n\n") 
 
 
 def plot_traces(
@@ -395,6 +341,7 @@ def to_utc_or_none(utc_str):
 
 def query_stations(starttime, endtime):
     """ Get from ISUH FDSNWS a list of stations that were active between starttime and endtime
+        Returned in <network>.<station> format.
     """
     client = Client(ISUH_IP_ADDR)
     inventory = client.get_stations(starttime=starttime, endtime=endtime)
@@ -471,7 +418,7 @@ def download_window(network_code, station_code, win_start, win_end, dir):
         return True # Report success
 
 
-def generate_noise_win(win_sample_start, win_sample_end, station, df_labels):
+def generate_noise_win(win_sample_start, win_sample_end, station, df_window):
     """
     Randomly sample a WIN_SIZE-length noise window that does not overlap any labeled
     event windows for a given station.
@@ -504,32 +451,25 @@ def generate_noise_win(win_sample_start, win_sample_end, station, df_labels):
     def generate_random_window(win_sample_start, total_seconds):
         offset = np.random.uniform(0, total_seconds-WIN_SIZE) # Uniformly sample from the entire time period
         cand_start = win_sample_start + offset      # Candidate start of window
-        cand_end = cand_start + WIN_SIZE            # Candidate end of window
+        cand_end = cand_start + WIN_SIZE      # Candidate end of window
         return cand_start, cand_end
-
 
     total_seconds = win_sample_end - win_sample_start
 
-    # Get the start and end of event windows for a given station
-    df_file_name = df_labels.loc[df_labels["file_name"].str.startswith(station), ["file_name"]]
-    parsed = df_file_name["file_name"].apply(parse_label_filename)
-    
+    # Get windows for the specified station  
+    df_station = df_window[df_window["SEED string"] == station].drop_duplicates(["Win start", "Win end"])
+
     # If the given station does not have any events, skip overlap checks and return a random window
-    if parsed.empty:
+    if df_station.empty:
         cand_start, cand_end = generate_random_window(win_sample_start, total_seconds)
         return cand_start, cand_end
 
-
-    df_file_name[["_", "__", "win_start", "win_end"]] = pd.DataFrame(
-        parsed.tolist(), index=df_file_name.index
-    )
-
-    df_file_name["win_start"] = df_file_name["win_start"].apply(to_utc_or_none)
-    df_file_name["win_end"] = df_file_name["win_end"].apply(to_utc_or_none)
+    df_station["win_start"] = df_station["win_start"].apply(to_utc_or_none)
+    df_station["win_end"] = df_station["win_end"].apply(to_utc_or_none)
 
     # Convert event window boundaries to NumPy arrays for fast broadcasting
-    event_starts = df_file_name["win_start"].to_numpy()
-    event_ends = df_file_name["win_end"].to_numpy()
+    event_starts = df_station["win_start"].to_numpy()
+    event_ends = df_station["win_end"].to_numpy()
 
     while True:
         cand_start, cand_end = generate_random_window(win_sample_start, total_seconds)
