@@ -10,8 +10,6 @@ from obspy.clients.fdsn import Client
 DATA_DIR = "data"
 WAVEFORM_EQ_DIR = "data/waveforms_earthquakes_nonoise"
 WAVEFORM_EX_DIR = "data/waveforms_explosions_nonoise"
-
-WAVEFORM_EQ_NOISE_DIR = "data/waveforms_earthquakes_noise_only"
 WAVEFORM_NOISE_DIR = "data/waveforms_noise_only"
 
 PRED_DIR = "predictions"
@@ -31,7 +29,6 @@ FILENAME_WINDOWS = "windows.csv"
 COLUMNS_Y = ["file_name", "network", "station", "instrument_type", "station_lat", "station_lon", "station_elv","p_arrival_time", "p_probability", "s_arrival_time", "s_probability"]
 FILENAME_Y_EQ = "eq_labels.csv" # Earthquake labels
 FILENAME_Y_EX = "ex_labels.csv" # Explosions labels
-FILENAME_Y_EQ_NOISE = "eq_noise_labels.csv" # Noise labels for earthquakes
 FILENAME_Y_NOISE = "noise_labels.csv" # Noise labels for earthquakes and explosions
 
 # ------------ DATA SOURCE CONFIGS  ------------
@@ -109,11 +106,8 @@ def print_pick_summary(df_picks):
 
 def print_far_pair_summary(df_windows):
     """
-    Print a summary of event–station windows where the S arrival falls outside
-    the configured post‑event buffer (i.e., “far pairs”).
-
-    A far pair is defined as a window where:
-        Win end - POST_EVENT_BUFFER < Event end
+    Print a summary of event–station windows where the S arrival falls within the configured 
+    post-event buffer or outside the window. (i.e., “far pairs”).
 
     In these cases, the window is too short to contain both the P and S picks
     for that event–station pair. The function identifies such windows, computes
@@ -130,24 +124,26 @@ def print_far_pair_summary(df_windows):
         Must include the following columns:
         - "Event id": unique identifier for the seismic event
         - "SEED string short": station identifier (channel removed)
-        - "Event start": timestamp of the P arrival
-        - "Event end": timestamp of the S arrival
-        - "Win end": end time of the analysis window
+        - "Pick time": Manually-identified S or P pick arrival time
+        - "Win index": For the same event-station, an indexing of windows
+
+    Note 
+    ----------
+    Far pairs should have already been separated into their individual windows. That is,
+    "Win start" should be different for each pick in a far pair.
     """
 
-    mask_far_pairs = df_windows["Win end"] - POST_EVENT_BUFFER < df_windows["Event end"]
+    df_copy = df_windows.copy()
 
-    df_far_pairs = df_windows[mask_far_pairs].copy()
-    df_far_pairs["P-S time diff (s)"] = df_far_pairs["Event end"] - df_far_pairs["Event start"] # Extract time difference between P and S picks for inspection
-
-    max_diff = max(df_windows["Event end"] - df_windows["Event start"])               # Max time diff between P-S pair
-    num_far_pairs = len(df_far_pairs.value_counts(["Event id", "SEED string short"]))   # Number of far pairs
+    df_groupby = df_copy.groupby(["Event id", "SEED string short"])
+    num_far_pairs = (df_groupby["Win index"].nunique() > 1).sum()
+    max_diff = (df_groupby["Pick time"].max() - df_groupby["Pick time"].min()).max()
 
     print("----------- FAR PAIR SUMMARY -----------" )
     print(f"Max duration between P and S arrivals: {max_diff}s")
     print(f"The window size of {WIN_SIZE}s is too short to contain some P, S pairs:")
     print(f"  * Number of event-stations with far pairs: {num_far_pairs}")
-    print(f"  * Number of picks affected: {len(df_far_pairs)}", end="\n\n")
+    print(f"  * Number of picks affected: {num_far_pairs*2}", end="\n\n")
 
 
 def print_overlap_summary(df_windows):
@@ -168,7 +164,7 @@ def print_overlap_summary(df_windows):
     df_overlaps = df_windows[df_windows["Has overlap"]]
     num_windows = len(df_overlaps.value_counts(["Event id", "SEED string short"]))
     print("----------- OVERLAP SUMMARY -----------" )
-    print(f"Number of windows containing picks from other events: {num_windows},", end="\n\n") 
+    print(f"Number of windows containing picks from other events: {num_windows}", end="\n\n") 
 
 
 def plot_traces(
@@ -456,26 +452,22 @@ def generate_noise_win(win_sample_start, win_sample_end, station, df_window):
 
     total_seconds = win_sample_end - win_sample_start
 
-    # Get windows for the specified station  
-    df_station = df_window[df_window["SEED string"] == station].drop_duplicates(["Win start", "Win end"])
+    # Get picks for the specified station  
+    df_station = df_window[df_window["SEED string"] == station]
 
-    # If the given station does not have any events, skip overlap checks and return a random window
+    # If the given station does not have any picks, skip overlap checks and return a random window
     if df_station.empty:
         cand_start, cand_end = generate_random_window(win_sample_start, total_seconds)
         return cand_start, cand_end
 
-    df_station["win_start"] = df_station["win_start"].apply(to_utc_or_none)
-    df_station["win_end"] = df_station["win_end"].apply(to_utc_or_none)
-
-    # Convert event window boundaries to NumPy arrays for fast broadcasting
-    event_starts = df_station["win_start"].to_numpy()
-    event_ends = df_station["win_end"].to_numpy()
+    # Convert picks to NumPy arrays for fast broadcasting
+    pick_times = df_station["Pick time"].apply(to_utc_or_none).to_numpy()
 
     while True:
         cand_start, cand_end = generate_random_window(win_sample_start, total_seconds)
 
-        # If candidate window overlaps any seismic event window, we reject and find a new window
-        overlaps = ((cand_start < event_ends) & (event_starts < cand_end)).any()
+        # If candidate window contains any picks, we reject and find a new window
+        overlaps = ((cand_start < pick_times) & (pick_times < cand_end)).any()
 
         if not overlaps:
             return cand_start, cand_end
