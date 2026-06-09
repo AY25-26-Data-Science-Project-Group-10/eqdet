@@ -1,4 +1,4 @@
-import obspy, os, re, random
+import obspy, os, re
 from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
@@ -11,6 +11,8 @@ DATA_DIR = "data"
 WAVEFORM_EQ_DIR = "data/waveforms_earthquakes_nonoise"
 WAVEFORM_EX_DIR = "data/waveforms_explosions_nonoise"
 WAVEFORM_NOISE_DIR = "data/waveforms_noise_only"
+QKML_EQ_DIR = "data/qkml_earthquakes"
+QKML_EX_DIR = "data/qkml_explosions"
 
 PRED_DIR = "predictions"
 VIS_DIR = "visualizations"
@@ -347,7 +349,7 @@ def query_stations(starttime, endtime):
     return stations
 
 
-def download_window(network_code, station_code, win_start, win_end, dir):
+def download_window(network_code, station_code, win_start, win_end, dir, print=True):
     """
     Download waveform data for a specified station and time window using
     `create_dataset.py`.
@@ -375,6 +377,9 @@ def download_window(network_code, station_code, win_start, win_end, dir):
 
     dir : str or pathlib.Path
         Output directory where downloaded waveform files will be written.
+    
+    print: bool
+        Set False to not print download status. Set true to print 
 
     Returns
     -------
@@ -389,7 +394,8 @@ def download_window(network_code, station_code, win_start, win_end, dir):
 
     stream = f"{network_code}.{station_code}.{location_code}.{stream_code}"
 
-    print(f"Querying for {network_code}.{station_code}\t{win_start}\t", end="")
+    if print:
+        print(f"Querying for {network_code}.{station_code}\t{win_start}\t")
 
     # create_dataset.py can only be used via command line
     cmd = ["python", "create_dataset.py", 
@@ -406,11 +412,15 @@ def download_window(network_code, station_code, win_start, win_end, dir):
     # If query yields no waveforms, command output will contain HTTP code 204 or 404
     http_match = re.search(r"HTTP Status code:\s*(\d+)", ret_str)
     if http_match:
-        http_code = http_match.group(1)
-        print(f"HTTP {http_code}: No matched data, request successful")
+        if print:
+            print(f"HTTP {http_match.group(1)}: No matched data, request successful")
+        
         return False # Report failure
+    
     else:
-        print("waveform downloaded!")
+        if print:
+            print("waveform downloaded!")
+
         return True # Report success
 
 
