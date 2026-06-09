@@ -21,9 +21,10 @@ data/                               # Dataset
     └── explosions2025.qkml         # QuakeML of explosions from 01.01.2025 to to 28.02.2025
 docs/                               # Meeting minutes, bibliography
 stalta/                             # Replica of ISUH's STA/LTA algorithm
+design_process.md                   # Explanation of design process of dataset constructor
 extract_data.py                     # Script to download waveforms
-create_dataset.py                   # Utility script from EQCCT for organising dataset
-examples.ipynb                      # Example code on building the dataset and using utility functions
+create_dataset.py                   # Utility script from EQCCT for organising and downloading dataset
+examples.ipynb                      # Example code on using utility functions
 eq_labels.csv                       # Ground truth labels (manual picks) for earthquakes
 ex_labels.csv                       # Ground truth labels (manual picks) for explosions
 noise_labels.csv                    # Ground truth labels for noise
