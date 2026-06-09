@@ -243,10 +243,6 @@ last_picks  = df_windows.groupby("Event type")["Pick time"].max()
 win_sample_start = first_picks.max()   # latest first pick
 win_sample_end   = last_picks.min()    # earliest last pick
 
-print(win_sample_start)
-print(win_sample_end)
-
-
 # Get stations that were active during that event time range
 station_list = utils.query_stations(win_sample_start, win_sample_end)
 
